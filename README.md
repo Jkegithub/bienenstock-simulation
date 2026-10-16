@@ -8,7 +8,9 @@ Pollen und Wasser wird verbucht, und Honig entsteht nur über die vollständige 
 
 ## Starten
 
-[`bienenstock.html`](bienenstock.html) herunterladen und per Doppelklick im Browser öffnen. Es wird kein Server gebraucht.
+1. Auf GitHub [`bienenstock.html`](bienenstock.html) öffnen.
+2. Rechts oben auf **„Download raw file“** klicken (Pfeil-Symbol).
+3. Die heruntergeladene Datei per Doppelklick öffnen. Sie läuft im Browser, es wird kein Server gebraucht.
 
 ## Was simuliert wird
 
@@ -66,6 +68,10 @@ Design-Entscheidungen beschreiben die Kommentare am Anfang von `src/template.htm
 - **Source Code Pro**, © 2010, 2012 Adobe Systems Incorporated, Reserved Font Name „Source“
 
 Beide stehen unter der SIL Open Font License 1.1. Die Lizenztexte liegen in [`fonts/`](fonts/).
+
+## Lizenz
+
+Code: [MIT](LICENSE). Schriften: SIL Open Font License 1.1 (siehe oben).
 
 ## Hintergrund
 
