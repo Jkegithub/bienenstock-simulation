@@ -1500,7 +1500,7 @@ function drawMeadow(g, now) {
       g.fillStyle = "#ffb000"; g.beginPath(); g.arc(fx, fy, 1, 0, 7); g.fill();
     }
     // Vorratsbalken je Blütenfeld: beschriftet, mit Prozentwert
-    const narrow = w < 460, bw = narrow ? 44 : 64;
+    const narrow = w < 330, bw = narrow ? 44 : 56;
     const ty = py + rad * 0.8 + 14, bx = clamp(px - bw / 2, x0 + 6, x0 + w - bw - 6);   // Balken bleibt in der Wiese
     g.font = "600 12px Fraunces, serif"; g.fillStyle = "#f2e3c6"; g.fillText(p.name, px, ty);
     g.font = "10px SourceCode, monospace";
