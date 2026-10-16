@@ -1,0 +1,237 @@
+<!doctype html>
+<!--
+==========================================================================================
+  BIENENSTOCK — Single-File-Simulation (HTML + CSS + JS inline, keine externen Assets)
+==========================================================================================
+  MODULPLAN (10 Module; jede Funktion trägt ihren Modulnamen als Kommentar)
+
+  1. core         Konstanten (CFG) und deterministischer Zufall. Besitzt: CFG, RNG-Zustand.
+  2. hexGrid      Wabengitter in axialen Koordinaten, Wachstum in Spiralreihenfolge, Zellzustände
+                  samt Zählern, Pixel<->Zelle. Besitzt: grid.cells[], grid.index, counts.
+  3. resourcePool Drei getrennte Ledger (Nektar-Zucker, Pollen, Wasser): Ereigniszähler
+                  gesammelt/verbraucht, Entnahme aus Zellen, Wasserreserve. Besitzt: ledger, water.
+  4. environment  Wetter (Markov-Kette), Blütenfelder, Außen- und Stocktemperatur,
+                  Krankheits-/Räuberdruck. Besitzt: env.
+  5. broodCycle   Implizite Königin legt Eier, Ei->Larve->Puppe->Biene, Larvenfütterung,
+                  Brutsterben. Besitzt: queen, Brut-Statistik.
+  6. beeAgents    Bienen mit genau einer Rolle (altersabhängig), Aufgaben-Automat,
+                  Pfade, Honigkette 1–5, Sterblichkeit. Besitzt: bees[], handover-Warteschlange.
+  7. sim          Tick-Schleife (10 Ticks/s, entkoppelt vom Render), Parameter, Stress-Test,
+                  Fail-State mit Ursachenkette, Log. Besitzt: S (Gesamtzustand), tick, history.
+  8. renderer     Ein Canvas 2D: Waben (Offscreen-Cache), Wiese, Bienen, Layer, Startaufbau.
+                  Besitzt: camera, Frame-Zähler, Flow-Partikel.
+  9. ui           HTML-Panels: Slider, Buttons, Stats, Zell-Inspektor, Log, Modals.
+                  Besitzt: DOM-Referenzen.
+ 10. selfCheck    Invarianten S1–S6 beim Start und laufend, Status-Tabelle, Fail-Banner.
+                  Besitzt: Prüfergebnisse.
+
+  Build: Diese Datei entsteht aus src/template.html + src/js/*.js + fonts/ (build.ps1).
+  Schriften: Fraunces (c) 2020 The Fraunces Project Authors; Source Code Pro (c) 2010, 2012
+  Adobe Systems Incorporated, Reserved Font Name 'Source'. Beide SIL Open Font License 1.1,
+  Lizenztexte: fonts/*-OFL.txt (https://openfontlicense.org).
+==========================================================================================
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bienenstock</title>
+<style>
+/* Zielkonflikt im Prompt: "keine externen Assets" UND "keine System-Fonts".
+   Auflösung: beide Schriften als base64-WOFF2 inline eingebettet (OFL 1.1 erlaubt das). */
+@font-face { font-family: "Fraunces"; font-weight: 600; font-style: normal;
+  src: url(data:font/woff2;base64,@@FONT_FRAUNCES@@) format("woff2"); }
+@font-face { font-family: "SourceCode"; font-weight: 400; font-style: normal;
+  src: url(data:font/woff2;base64,@@FONT_SCP@@) format("woff2"); }
+
+:root {
+  --wood-0: #120a05;
+  --wood-1: #1d1209;
+  --wood-2: #2a1a0d;
+  --wood-3: #3b2513;
+  --wax:    #e9c98b;
+  --wax-dim:#9c7c4c;
+  --honey:  #f5a623;
+  --amber:  #d9780f;
+  --nectar: #ffd86b;
+  --pollen: #ff5d1f;
+  --cream:  #f7ead0;
+  --ink:    #f2e3c6;
+  --muted:  #ad926b;
+  --ok:     #a8d14f;
+  --fail:   #ff3b2f;
+  --cool:   #4fb3d9;
+  --line:   rgba(233, 201, 139, .16);
+  --panel:  rgba(29, 18, 9, .82);
+  --f-display: "Fraunces", serif;
+  --f-mono: "SourceCode", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  color: var(--ink);
+  font: 13px/1.45 var(--f-mono);
+  background-color: var(--wood-0);
+  background-image:
+    radial-gradient(1200px 700px at 30% 40%, rgba(245,166,35,.13), transparent 60%),
+    radial-gradient(900px 600px at 85% 10%, rgba(217,120,15,.10), transparent 65%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'><path d='M28 0 L56 16 L56 48 L28 64 L0 48 L0 16 Z M28 64 L28 97' fill='none' stroke='%23e9c98b' stroke-opacity='.045' stroke-width='1.2'/></svg>"),
+    linear-gradient(160deg, var(--wood-2), var(--wood-0) 70%);
+  overflow: hidden;
+}
+.app { display: grid; grid-template-columns: 1fr 390px; grid-template-rows: auto 1fr; height: 100vh; }
+header {
+  grid-column: 1 / -1; display: flex; align-items: baseline; gap: 22px; flex-wrap: wrap;
+  padding: 14px 22px 10px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(18,10,5,.9), rgba(18,10,5,.4));
+}
+h1 { font: 600 30px/1 var(--f-display); margin: 0; letter-spacing: .5px; color: var(--honey); }
+h1 small { font: 13px var(--f-mono); color: var(--muted); letter-spacing: 0; margin-left: 10px; }
+h2 { font: 600 16px/1.2 var(--f-display); margin: 0 0 8px; color: var(--wax); letter-spacing: .3px; }
+.clock { font-size: 14px; color: var(--cream); }
+.clock b { color: var(--honey); font-weight: 400; }
+.badge { margin-left: auto; padding: 3px 10px; border-radius: 3px; border: 1px solid var(--line); }
+.badge.ok { color: var(--ok); border-color: rgba(168,209,79,.4); }
+.badge.fail { color: #fff; background: var(--fail); border-color: var(--fail); }
+.stage { position: relative; min-width: 0; min-height: 0; }
+canvas#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.legend { position: absolute; left: 14px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  padding: 7px 10px; background: rgba(18,10,5,.72); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; max-width: 60%; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 11px; height: 11px; display: inline-block; clip-path: polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+aside { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 12px 16px 30px; }
+section { padding: 12px 0 14px; border-bottom: 1px solid var(--line); }
+.ctl { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 2px 8px; margin: 6px 0; }
+.ctl label { color: var(--muted); }
+.ctl output { text-align: right; color: var(--cream); }
+.ctl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--honey); }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+button {
+  font: 12px var(--f-mono); color: var(--wood-0); background: var(--wax); border: 0; border-radius: 3px;
+  padding: 6px 11px; cursor: pointer; transition: background .15s, transform .1s;
+}
+button:hover { background: var(--honey); }
+button:active { transform: translateY(1px); }
+button.on { background: var(--honey); box-shadow: 0 0 0 2px rgba(245,166,35,.35); }
+button.danger { background: var(--pollen); color: #fff; }
+.toggles { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; color: var(--muted); }
+.toggles input { accent-color: var(--honey); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+td, th { padding: 2px 4px; text-align: left; vertical-align: top; }
+th { color: var(--muted); font-weight: 400; }
+td.n { text-align: right; color: var(--cream); font-variant-numeric: tabular-nums; }
+.kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+.kpi div { background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 3px; padding: 5px 7px; }
+.kpi b { display: block; font: 600 20px/1.1 var(--f-display); color: var(--honey); }
+.kpi span { color: var(--muted); font-size: 11px; }
+.warn { color: var(--pollen); }
+.note { color: var(--muted); font-size: 11px; margin-top: 6px; }
+#inspector .empty { color: var(--muted); }
+#log { max-height: 210px; overflow-y: auto; font-size: 11px; }
+#log div { padding: 1px 0; border-bottom: 1px dotted rgba(233,201,139,.08); }
+#log .t { color: var(--muted); margin-right: 6px; }
+#log .bad { color: var(--pollen); }
+#log .sys { color: var(--cool); }
+.pass { color: var(--ok); } .failc { color: var(--fail); font-weight: 700; }
+#failBanner { display: none; margin: 8px 0; padding: 8px 10px; background: var(--fail); color: #fff; border-radius: 3px; }
+#failBanner.show { display: block; }
+.modal { position: fixed; inset: 0; display: none; place-items: center; background: rgba(8,4,2,.72); z-index: 10; }
+.modal.show { display: grid; }
+.modal .box { width: min(640px, 92vw); max-height: 86vh; overflow-y: auto; background: var(--wood-1);
+  border: 1px solid var(--amber); border-radius: 5px; padding: 18px 22px; box-shadow: 0 20px 70px rgba(0,0,0,.6); }
+.modal h2 { font-size: 24px; color: var(--honey); }
+.modal ol { padding-left: 20px; } .modal li { margin: 3px 0; }
+
+/* Orchestrierter Aufbau: gestaffelte Reveals der Panels, Waben bauen sich im Canvas spiralförmig auf */
+.rv { opacity: 0; transform: translateY(10px); animation: rv .6s cubic-bezier(.2,.7,.2,1) forwards; }
+@keyframes rv { to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rv { animation: none; opacity: 1; transform: none; } }
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  .legend { max-width: 92%; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="rv" style="animation-delay:.05s">
+    <h1>Bienenstock <small>Kolonie-Simulation</small></h1>
+    <div class="clock">Tag <b id="day">0,0</b> · Tick <b id="tick">0</b> · <span id="weather">—</span> · außen <b id="tout">—</b> · Brutnest <b id="thive">—</b></div>
+    <div class="badge" id="checkBadge">selfCheck …</div>
+  </header>
+
+  <div class="stage rv" style="animation-delay:.15s">
+    <canvas id="view"></canvas>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <aside>
+    <section class="rv" style="animation-delay:.3s">
+      <h2>Steuerung</h2>
+      <div class="ctl"><label for="sColony">Koloniegröße (Ziel)</label><output id="oColony"></output>
+        <input type="range" id="sColony" min="30" max="400" step="1" value="150"></div>
+      <div class="ctl"><label for="sRes">Ressourcen / Blüten</label><output id="oRes"></output>
+        <input type="range" id="sRes" min="0" max="100" step="1" value="70"></div>
+      <div class="ctl"><label for="sWeather">Wetterstabilität</label><output id="oWeather"></output>
+        <input type="range" id="sWeather" min="0" max="100" step="1" value="70"></div>
+      <div class="ctl"><label for="sDisease">Krankheits-/Räuberdruck</label><output id="oDisease"></output>
+        <input type="range" id="sDisease" min="0" max="100" step="1" value="15"></div>
+      <div class="btns">
+        <button id="bPause">Pause</button>
+        <button id="bSpeed">2×</button>
+        <button id="bReset">Reset</button>
+        <button id="bStress" class="danger">Stress-Test</button>
+        <button id="bReport" hidden>Bericht</button>
+      </div>
+      <div class="note" id="stressNote"></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="lPaths" checked> Bienenpfade</label>
+        <label><input type="checkbox" id="lTemp"> Temperaturzonen</label>
+        <label><input type="checkbox" id="lFlow" checked> Ressourcenflüsse</label>
+      </div>
+    </section>
+
+    <section class="rv" style="animation-delay:.42s">
+      <h2>Kolonie</h2>
+      <div class="kpi">
+        <div><b id="kPop">0</b><span>Bienen</span></div>
+        <div><b id="kHoney">0</b><span>Honig (Einh.)</span></div>
+        <div><b id="kBrood">0</b><span>Brut</span></div>
+      </div>
+      <table id="stats"></table>
+      <div class="note warn" id="capNote"></div>
+    </section>
+
+    <section class="rv" style="animation-delay:.54s">
+      <h2>Zell-Inspektor</h2>
+      <div id="inspector"><span class="empty">Zelle im Wabenbild anklicken.</span></div>
+    </section>
+
+    <section class="rv" style="animation-delay:.66s">
+      <h2>Status · selfCheck</h2>
+      <div id="failBanner"></div>
+      <table id="checks"></table>
+      <div class="note" id="checkNote"></div>
+      <h2 style="margin-top:12px">Ausbaustufen</h2>
+      <div id="stages" class="note" style="color:var(--ink)"></div>
+    </section>
+
+    <section class="rv" style="animation-delay:.78s">
+      <h2>Ereignisse</h2>
+      <div id="log"></div>
+    </section>
+  </aside>
+</div>
+
+<div class="modal" id="collapseModal"><div class="box" id="collapseBox"></div></div>
+<div class="modal" id="reportModal"><div class="box" id="reportBox"></div></div>
+
+<script>
+"use strict";
+@@SCRIPT@@
+</script>
+</body>
+</html>
