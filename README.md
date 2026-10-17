@@ -8,6 +8,10 @@ Pollen und Wasser wird verbucht, und Honig entsteht nur über die vollständige 
 
 ## Starten
 
+**Im Browser:** <https://jkegithub.github.io/bienenstock-simulation/>
+
+**Offline:**
+
 1. Auf GitHub [`bienenstock.html`](bienenstock.html) öffnen.
 2. Rechts oben auf **„Download raw file“** klicken (Pfeil-Symbol).
 3. Die heruntergeladene Datei per Doppelklick öffnen. Sie läuft im Browser, es wird kein Server gebraucht.
